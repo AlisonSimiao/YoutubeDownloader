@@ -1,11 +1,12 @@
 '''software to download youtube video'''
 import io
+import threading
+import cloudscraper
 import PySimpleGUI as sg
 from PIL import Image
 from pytube import YouTube
-import cloudscraper
 from Load import convert_to_bytes
-import threading
+
 
 FILENAME = "./IMG/NoVideo.png"
 window = None
@@ -47,8 +48,16 @@ def get_options(yt_streams):
     return res
 
 
-def progress(stream, data, bytes):
+def completed(stream, path):
 
+    splited = path.split( "/" )
+    splited.pop()
+    path = "/".join(splited)
+
+    saves(path)
+    print("completed")
+
+def progress(stream, data, bytes):
     percent = (stream.filesize - bytes) / stream.filesize * 100
     window.write_event_value('update_progress', percent)
 
@@ -62,22 +71,22 @@ def main():
         [sg.Text(key="title", size=(35, 2))],
         [sg.Combo(values=[], key='res', size=(5, 8))],
         [sg.ProgressBar(max_value=100, orientation='h',
-                        size=(20, 20), key='progress')],
+                        size=(20, 20), key='progress',bar_color=['Green','Black'])],
         [sg.OK()]
     ]
 
-    layout = [
+    layout = [[sg.Text("YouTube Downloader")],
         [sg.Image(data=IM, key="-IMAGE-", size=(200, 200)),
          sg.VSeperator(),
          sg.Column(details),
          ],
         [
             sg.Text("Url "), sg.Input(
-                "https://www.youtube.com/watch?v=NRP4bOWoZpw", key="URL"), sg.Button("Search")
+                "", key="URL"), sg.Button("Search")
         ],
         [
-            sg.Text("Default folder:"), sg.Input(
-                key='-FOLDER-'), sg.FilesBrowse('Select')
+            sg.Text("Folder:"), sg.Input(
+                key='-FOLDER-'), sg.FolderBrowse('Select')
         ]
 
     ]
@@ -85,34 +94,37 @@ def main():
 
     while True:
         event, values = window.read()
+        
         if event == "Exit" or event == sg.WIN_CLOSED:
             break
         if event == "OK":
             try:
                 if not values["res"]:
-                    raise Exception("resolution failed") 
+                    raise Exception("resolution failed")
                 target = youtube.streams.get_by_itag(
                     values["res"].split(" ")[itag]
                 )
+
                 window["progress"].update(0)
                 threading.Thread(target=Download,
-                        args=(target, ),
-                        daemon=True).start()
+                                 args=(target, values["-FOLDER-"], ),
+                                 daemon=True).start()
             except Exception:
                 window['title'].update(
-                        value="Check resolution failed", text_color="Red"
-                    )
-                
+                    value="Check resolution failed", text_color="Red"
+                )
+            continue
         if event == "update_progress":
             window["progress"].update(values[event])
-
+            continue
         if event == "Search":
             try:
                 if not values["URL"]:
                     raise Exception("URL undefined")
-                
-                youtube = YouTube(values["URL"], on_progress_callback=progress)
-                window['title'].update(value=youtube.title,text_color="White")
+
+                youtube = YouTube(
+                    values["URL"], on_progress_callback=progress, on_complete_callback=completed)
+                window['title'].update(value=youtube.title, text_color="White")
                 data = get_image_url(youtube.thumbnail_url)
                 window["-IMAGE-"].update(data=data)
                 window["res"].update(
@@ -124,11 +136,34 @@ def main():
                 window['title'].update(
                     value="Error Search ...", text_color="Red")
                 window["-IMAGE-"].update(data=IM)
-
+            continue
+        
     window.close()
 
-def Download(target):
-    target.download()
 
+def Download(target, path):
+    target.download(path)
+
+def saves(path):
+    import json
+    data = {
+        "LINK": "https://www.youtube.com/watch?v=(index_video)",
+        "PATH": path
+    }
+    
+    with open("./SAVES/save.mmr", "w", encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    f.close()
+    
+def load():
+    import json
+    
+    with open("./SAVES/save.mmr") as data_file:
+        data_loaded = json.load(data_file)
+        return data_loaded;
+        
+     
+    
+    
 if __name__ == "__main__":
     main()
